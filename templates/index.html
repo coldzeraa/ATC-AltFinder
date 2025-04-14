@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="light"> <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medikamenten-Engpass Prüfung</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"/>
+    <style>
+        /* ... (Stile von vorheriger Antwort) ... */
+        body { padding-top: 20px; }
+        main { max-width: 900px; }
+        #results, #update-status { margin-top: 2rem; }
+        #results hgroup { margin-bottom: 1.5rem; }
+        pre { background-color: var(--pico-form-element-background-color); border: 1px solid var(--pico-form-element-border-color); padding: 1em; border-radius: var(--pico-border-radius); white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto; }
+        #loading, #update-loading { text-align: center; margin-top: 1rem; }
+        .status-ok { color: var(--pico-color-green); }
+        .status-warning { color: var(--pico-color-orange); }
+        .status-error { color: var(--pico-color-red); }
+        .status-db-error { color: var(--pico-color-purple); }
+        #update-button { background-color: var(--pico-color-secondary); margin-left: 1rem;}
+        #update-button:hover { background-color: var(--pico-color-secondary-hover); }
+        #update-status { border: 1px solid var(--pico-form-element-border-color); padding: 1em; border-radius: var(--pico-border-radius); }
+        #update-status ul { margin-top: 0.5em; padding-left: 20px;}
+    </style>
+</head>
+<body>
+    <main class="container">
+        <hgroup>
+            <h1>Medikamenten-Engpass Prüfung</h1>
+            <h2>Lokale Prüfung & Externer CDS Hook Aufruf</h2>
+        </hgroup>
+
+        <form id="check-form">
+             <label for="medication_name">Medikamentenname</label>
+             <input type="text" id="medication_name" name="medication_name" placeholder="Mind. 2 Zeichen für Vorschläge eingeben..." required list="medication_suggestions" autocomplete="off">
+             <datalist id="medication_suggestions"></datalist>
+             <footer>
+                  <button type="submit" id="submit-button">Prüfen und Externen Hook Senden</button>
+                  <button type="button" id="update-button" class="secondary outline">Download & DB Update starten</button>
+              </footer>
+        </form>
+
+        <div id="loading" style="display: none;" aria-busy="true">Prüfung läuft und externer Hook wird gesendet...</div>
+        <div id="update-loading" style="display: none;" aria-busy="true">Automatischer Download und Datenbank-Update läuft (dies kann 1-2 Minuten dauern)...</div>
+
+        <article id="update-status" style="display: none;">
+             <h4>Download & Datenbank Update Status</h4>
+             <p id="update-message"></p>
+             <div id="update-details"></div>
+        </article>
+
+        <article id="results" style="display: none;">
+             <hgroup> <h3 >Ergebnisse für: <i id="res-med-name"></i></h3> </hgroup>
+             <hr>
+             <section id="local-results">
+                <h4>Lokale Prüfung (SQLite)</h4>
+                <p><strong>Status:</strong> <span id="res-local-status"></span></p>
+                <p><strong>ATC-Code gefunden:</strong> <span id="res-local-atc"></span></p>
+                <p><strong>Verfügbare Alternativen gefunden:</strong> <span id="res-local-alt-count"></span></p>
+                <div id="res-local-alt-details"></div>
+             </section>
+             <hr>
+             <section id="external-results">
+                 <h4>Externer CDS Hook Aufruf</h4>
+                 <p><strong>Ziel-URL:</strong> <code id="res-ext-target"></code></p>
+                 <p><strong>HTTP Status Code:</strong> <code id="res-ext-status"></code></p>
+                 <p><strong>Fehler beim Senden:</strong> <span id="res-ext-error"></span></p>
+                 <div><strong>Antwort vom externen Server:</strong> <pre id="res-ext-body"></pre></div>
+             </section>
+        </article>
+
+    </main>
+
+    <script>
+        // --- DOM Elemente ---
+        const form = document.getElementById('check-form');
+        const resultsArticle = document.getElementById('results');
+        const loadingDiv = document.getElementById('loading');
+        const medNameInput = document.getElementById('medication_name');
+        const suggestionsDatalist = document.getElementById('medication_suggestions');
+        const submitButton = document.getElementById('submit-button');
+        const updateButton = document.getElementById('update-button');
+        const updateLoadingDiv = document.getElementById('update-loading');
+        const updateStatusArticle = document.getElementById('update-status');
+        const updateMessageP = document.getElementById('update-message');
+        const updateDetailsDiv = document.getElementById('update-details');
+
+        let autocompleteDebounceTimer;
+
+        // --- Autocomplete Logik ---
+        medNameInput.addEventListener('input', () => {
+            // ... (Code bleibt gleich) ...
+            const searchTerm = medNameInput.value.trim();
+            clearTimeout(autocompleteDebounceTimer);
+            suggestionsDatalist.innerHTML = '';
+            if (searchTerm.length > 1) {
+                autocompleteDebounceTimer = setTimeout(() => { fetchSuggestions(searchTerm); }, 300);
+            }
+        });
+        async function fetchSuggestions(term) {
+            // ... (Code bleibt gleich) ...
+             try {
+                const response = await fetch(`/autocomplete/medication?term=${encodeURIComponent(term)}`);
+                if (!response.ok) { throw new Error(`Autocomplete HTTP error! status: ${response.status}`); }
+                const suggestions = await response.json();
+                suggestionsDatalist.innerHTML = '';
+                suggestions.forEach(suggestion => {
+                    const option = document.createElement('option');
+                    option.value = suggestion;
+                    suggestionsDatalist.appendChild(option);
+                });
+            } catch (error) { console.error('Fehler beim Abrufen der Autocomplete-Vorschläge:', error); }
+        }
+
+        // --- Formular-Submit Logik (Prüfung & Externer Hook) ---
+        form.addEventListener('submit', async (event) => {
+            // ... (Code bleibt gleich, aber Update-Status ausblenden) ...
+             event.preventDefault();
+            const medName = medNameInput.value.trim();
+            if (!medName) { alert('Bitte einen Medikamentennamen eingeben.'); return; }
+            resultsArticle.style.display = 'none';
+            updateStatusArticle.style.display = 'none'; // Update-Status ausblenden
+            loadingDiv.style.display = 'block';
+            submitButton.setAttribute('aria-busy', 'true');
+            updateButton.disabled = true; // Update während Prüfung deaktivieren
+            clearResults(); // Alte Prüfergebnisse löschen
+            try {
+                const response = await fetch('/check-and-notify-external', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ medication_name: medName }),
+                });
+                const data = await response.json();
+                if (!response.ok && data.error) { throw new Error(`Server-Fehler: ${data.error}`); }
+                displayResults(data);
+            } catch (error) { console.error('Fehler beim Senden der Anfrage:', error); displayError(`Fehler: ${error.message}`);
+            } finally {
+                loadingDiv.style.display = 'none'; resultsArticle.style.display = 'block';
+                submitButton.removeAttribute('aria-busy'); updateButton.disabled = false;
+            }
+        });
+
+        // --- Logik für Auto-Update Button ---
+        updateButton.addEventListener('click', async () => {
+            if (!confirm('Automatischer Download und Datenbank-Update starten? Dies kann einige Minuten dauern und löscht alte Engpass-Daten.')) {
+                return;
+            }
+
+            resultsArticle.style.display = 'none'; // Alte Ergebnisse ausblenden
+            updateStatusArticle.style.display = 'none'; // Alten Status ausblenden
+            updateLoadingDiv.style.display = 'block'; // Ladeanzeige zeigen
+            updateButton.setAttribute('aria-busy', 'true');
+            submitButton.disabled = true; // Prüfung während Update deaktivieren
+
+            try {
+                 // Rufe den NEUEN Endpunkt auf
+                 const response = await fetch('/update-database-auto', { method: 'POST' });
+                 const data = await response.json(); // Erwarte JSON zurück
+
+                 updateMessageP.textContent = data.message || 'Unbekannte Antwort erhalten.';
+                 updateMessageP.className = data.status === 'success' ? 'status-ok' : 'status-error';
+
+                 // Zeige Details/Logs aus dem Update-Prozess
+                 updateDetailsDiv.innerHTML = '';
+                 if (data.details && Array.isArray(data.details)) {
+                     const ul = document.createElement('ul');
+                     data.details.forEach(msg => {
+                         const li = document.createElement('li');
+                         // Entferne Pfade für bessere Lesbarkeit
+                         let displayMsg = msg.replace(/\/.*\/|C:\\.*\\/gi, '');
+                         li.textContent = displayMsg; // Zeige nur Dateinamen etc.
+                         if (msg.toLowerCase().includes('fehler') || msg.toLowerCase().includes('warnung')) {
+                            li.style.color = 'var(--pico-color-red)';
+                            li.style.fontWeight = 'bold';
+                         }
+                         ul.appendChild(li);
+                     });
+                     updateDetailsDiv.appendChild(ul);
+                 }
+                 updateStatusArticle.style.display = 'block'; // Zeige Status-Artikel
+
+            } catch(error) {
+                 console.error('Fehler beim Aufruf des Auto-Update-Endpunkts:', error);
+                 updateMessageP.textContent = `Netzwerk-Fehler beim Update-Aufruf: ${error.message}`;
+                 updateMessageP.className = 'status-error';
+                 updateDetailsDiv.innerHTML = '';
+                 updateStatusArticle.style.display = 'block';
+            } finally {
+                 updateLoadingDiv.style.display = 'none'; // Ladeanzeige ausblenden
+                 updateButton.removeAttribute('aria-busy');
+                 submitButton.disabled = false; // Prüfung wieder aktivieren
+            }
+        });
+
+        // --- Hilfsfunktionen zum Anzeigen (unverändert) ---
+         function displayResults(data) { /* ... (Code bleibt gleich) ... */
+            document.getElementById('res-med-name').textContent = data.medication_checked || 'N/A';
+            const local = data.local_check || {};
+            const localStatusSpan = document.getElementById('res-local-status');
+            localStatusSpan.textContent = local.status || 'N/A';
+            localStatusSpan.className = '';
+            if (local.status && local.status.includes('Engpass')) { localStatusSpan.classList.add('status-warning');}
+            else if (local.status && local.status.includes('Verfügbar')) { localStatusSpan.classList.add('status-ok');}
+            else if (local.status && local.status.includes('Fehler')) { localStatusSpan.classList.add('status-db-error');}
+            document.getElementById('res-local-atc').textContent = local.atc_code_found || 'Nicht gefunden';
+            document.getElementById('res-local-alt-count').textContent = local.alternatives_found_count !== undefined ? local.alternatives_found_count : 'N/A';
+            const altDetailsDiv = document.getElementById('res-local-alt-details');
+            altDetailsDiv.innerHTML = '';
+            if (local.alternatives_details && local.alternatives_details.length > 0) {
+                const p = document.createElement('p');
+                p.innerHTML = '<strong>Details der Alternativen:</strong>';
+                const ul = document.createElement('ul');
+                local.alternatives_details.forEach(alt => {
+                    const li = document.createElement('li');
+                    li.textContent = `${alt.Name} (ATC: ${alt.ATC_Code || '?'}, Z.Nr.: ${alt.Zulassungsnummer || '?'})`;
+                    ul.appendChild(li);
+                });
+                altDetailsDiv.appendChild(p); altDetailsDiv.appendChild(ul);
+            } else if (local.alternatives_found_count === 0) { altDetailsDiv.innerHTML = '<p>Keine verfügbaren Alternativen gefunden.</p>';}
+            const external = data.external_cds_hook_call || {};
+            document.getElementById('res-ext-target').textContent = external.target_url || 'N/A';
+            document.getElementById('res-ext-status').textContent = external.status_code || 'N/A';
+            const errorSpan = document.getElementById('res-ext-error');
+            errorSpan.className = '';
+            if (external.error) { errorSpan.textContent = external.error; errorSpan.classList.add('status-error');}
+            else { errorSpan.textContent = 'Kein Fehler'; errorSpan.classList.add('status-ok');}
+            const bodyPre = document.getElementById('res-ext-body');
+            if (external.response_body !== null && external.response_body !== undefined) {
+                 try {
+                     if (typeof external.response_body === 'object') { bodyPre.textContent = JSON.stringify(external.response_body, null, 2); }
+                     else { bodyPre.textContent = JSON.stringify(JSON.parse(external.response_body), null, 2); }
+                 } catch(e) { bodyPre.textContent = String(external.response_body); }
+            } else { bodyPre.textContent = 'Keine Antwortdaten erhalten.';}
+         }
+        function displayError(message) { /* ... (Code bleibt gleich) ... */
+             resultsArticle.style.display = 'block';
+             resultsArticle.innerHTML = `<hgroup><h3 class="status-error">Fehler</h3></hgroup><p>${message}</p>`;
+        }
+        function clearResults() { /* ... (Code bleibt gleich) ... */
+             document.getElementById('res-med-name').textContent = '';
+             document.getElementById('res-local-status').textContent = '';
+             document.getElementById('res-local-atc').textContent = '';
+             document.getElementById('res-local-alt-count').textContent = '';
+             document.getElementById('res-local-alt-details').innerHTML = '';
+             document.getElementById('res-ext-target').textContent = '';
+             document.getElementById('res-ext-status').textContent = '';
+             document.getElementById('res-ext-error').textContent = '';
+             document.getElementById('res-ext-body').textContent = '';
+             const resultsContent = ` <hgroup> <h3 >Ergebnisse für: <i id="res-med-name"></i></h3> </hgroup> <hr> <section id="local-results"> <h4>Lokale Prüfung (SQLite)</h4> <p><strong>Status:</strong> <span id="res-local-status"></span></p> <p><strong>ATC-Code gefunden:</strong> <span id="res-local-atc"></span></p> <p><strong>Verfügbare Alternativen gefunden:</strong> <span id="res-local-alt-count"></span></p> <div id="res-local-alt-details"></div> </section> <hr> <section id="external-results"> <h4>Externer CDS Hook Aufruf</h4> <p><strong>Ziel-URL:</strong> <code id="res-ext-target"></code></p> <p><strong>HTTP Status Code:</strong> <code id="res-ext-status"></code></p> <p><strong>Fehler beim Senden:</strong> <span id="res-ext-error"></span></p> <div><strong>Antwort vom externen Server:</strong> <pre id="res-ext-body"></pre></div> </section>`;
+             if (!document.getElementById('res-med-name')) { resultsArticle.innerHTML = resultsContent;}
+        }
+    </script>
+
+</body>
+</html>
