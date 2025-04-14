@@ -149,10 +149,6 @@ Several parameters can be adjusted directly at the top of the `app.py` file:
 * Lacks automated tests.
 * Lacks robust security and privacy features for clinical use.
 
-## License
-
-(Optional: Add license information here, e.g., based on `BAK.pdf`)
-This work might be under the conditions of the Creative Commons License Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0) as indicated in the associated thesis document. Please verify.
 
 ## Author
 
