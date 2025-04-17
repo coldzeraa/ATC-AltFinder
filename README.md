@@ -2,7 +2,7 @@
 
 ## Project Description
 
-This project is a prototype web application developed as part of a Bachelor's thesis at FH Oberösterreich, Hagenberg Campus (June 2024). Its primary goal is to assist healthcare professionals in handling drug shortages in the Austrian context.
+This project is a prototype web application developed as part of a Bachelor's thesis at FH Oberösterreich, Hagenberg Campus (2025). Its primary goal is to assist healthcare professionals in handling drug shortages in the Austrian context.
 
 The tool provides the following functionalities:
 1.  Checks if a given medication name exists within a locally stored drug shortage list.
